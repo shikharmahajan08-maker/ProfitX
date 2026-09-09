@@ -1,0 +1,37 @@
+import { FormEvent, useState } from "react";
+import { Link, Redirect, useLocation } from "wouter";
+import { ArrowRight, Check, Eye, EyeOff, LineChart, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { startLogin } from "@/const";
+import { useSessionStore } from "@/store/sessionStore";
+
+export default function Auth({ mode = "login" }: { mode?: "login" | "register" }) {
+  const [, setLocation] = useLocation();
+  const { user, signIn } = useSessionStore();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const isRegister = mode === "register";
+  if (user) return <Redirect to="/dashboard" />;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (isRegister && !name.trim()) return setError("Please enter your name.");
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Please enter a valid email address.");
+    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    if (isRegister && password !== confirm) return setError("Passwords do not match.");
+    signIn({ name: isRegister ? name.trim() : email.split("@")[0], email: email.trim().toLowerCase() });
+    setLocation("/dashboard");
+  };
+
+  return <div className="min-h-screen bg-[#202743] text-white lg:grid lg:grid-cols-[1fr_0.9fr]">
+    <div className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between p-14 xl:p-20"><div className="absolute -left-20 -top-20 h-[420px] w-[420px] rounded-full bg-[#6f7cff]/20 blur-3xl" /><div className="absolute bottom-0 right-0 h-[520px] w-[520px] rounded-full bg-[#47c1a3]/10 blur-3xl" /><div className="relative"><Link href="/" className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10"><LineChart className="h-5 w-5 text-[#9ba6ff]" /></div><div><p className="text-lg font-bold">vest<span className="text-[#9ba6ff]">or</span></p><p className="text-[9px] uppercase tracking-[0.22em] text-slate-400">paper terminal</p></div></Link></div><div className="relative max-w-xl"><div className="mb-5 inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-[#b8bfff]">Your practice portfolio</div><h1 className="text-5xl font-semibold leading-[1.08] tracking-[-0.04em] xl:text-6xl">Build conviction<br /><span className="text-[#9ba6ff]">before capital.</span></h1><p className="mt-6 max-w-md text-base leading-relaxed text-slate-300">A calm space to learn markets, test ideas, and understand your portfolio with ₹10,00,000 in virtual cash.</p><div className="mt-10 grid grid-cols-3 gap-6 border-t border-white/10 pt-6"><div><p className="text-2xl font-semibold">08</p><p className="mt-1 text-[10px] uppercase tracking-wider text-slate-400">markets tracked</p></div><div><p className="text-2xl font-semibold">₹10L</p><p className="mt-1 text-[10px] uppercase tracking-wider text-slate-400">starting cash</p></div><div><p className="text-2xl font-semibold">0%</p><p className="mt-1 text-[10px] uppercase tracking-wider text-slate-400">real-world risk</p></div></div></div><p className="relative text-xs text-slate-500">Educational paper trading only. Market data is simulated in this V1.</p></div>
+    <div className="flex items-center justify-center bg-[#fafbfc] px-6 py-12 text-slate-900 sm:px-12"><div className="w-full max-w-[420px]"><div className="mb-10 lg:hidden"><Link href="/" className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#202743]"><LineChart className="h-5 w-5 text-[#9ba6ff]" /></div><span className="font-bold">vestor</span></Link></div><div className="mb-8"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f7cff]">{isRegister ? "Start your journal" : "Welcome back"}</p><h2 className="text-3xl font-semibold tracking-tight">{isRegister ? "Create your account" : "Sign in to vestor"}</h2><p className="mt-2 text-sm text-slate-500">{isRegister ? "Your practice portfolio is ready in under a minute." : "Continue where you left off in your practice portfolio."}</p></div><form onSubmit={submit} className="space-y-4"><div className="space-y-2">{isRegister && <><Label htmlFor="name">Full name</Label><Input id="name" placeholder="Aarav Mehta" value={name} onChange={(e) => setName(e.target.value)} className="h-12 rounded-xl border-slate-200 bg-white" /></>}</div><div className="space-y-2"><Label htmlFor="email">Email address</Label><Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 rounded-xl border-slate-200 bg-white" /></div><div className="space-y-2"><div className="flex items-center justify-between"><Label htmlFor="password">Password</Label>{!isRegister && <button type="button" className="text-xs font-medium text-[#6f7cff]">Forgot password?</button>}</div><div className="relative"><Input id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 rounded-xl border-slate-200 bg-white pr-11" /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-slate-400">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>{isRegister && <div className="space-y-2"><Label htmlFor="confirm">Confirm password</Label><Input id="confirm" type="password" placeholder="Repeat password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-12 rounded-xl border-slate-200 bg-white" /></div>}{error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>}<Button type="submit" className="h-12 w-full rounded-xl bg-[#6f7cff] text-sm font-semibold shadow-lg shadow-[#6f7cff]/20 hover:bg-[#5968df]">{isRegister ? "Create account" : "Sign in"}<ArrowRight className="ml-2 h-4 w-4" /></Button></form><div className="my-6 flex items-center gap-3"><div className="h-px flex-1 bg-slate-200" /><span className="text-[10px] uppercase tracking-widest text-slate-400">or</span><div className="h-px flex-1 bg-slate-200" /></div><Button type="button" variant="outline" onClick={() => startLogin()} className="h-12 w-full rounded-xl border-slate-200 bg-white text-sm">Continue with Manus OAuth</Button><p className="mt-7 text-center text-sm text-slate-500">{isRegister ? "Already have an account?" : "New to vestor?"} <Link href={isRegister ? "/login" : "/register"} className="font-semibold text-[#6f7cff]">{isRegister ? "Sign in" : "Create an account"}</Link></p><div className="mt-10 grid grid-cols-2 gap-3 text-[10px] text-slate-400"><span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-[#47c1a3]" />Secure session</span><span className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5 text-[#47c1a3]" />Paper money only</span><span className="col-span-2 flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-[#47c1a3]" />Your data stays in your account</span></div></div></div>
+  </div>;
+}
