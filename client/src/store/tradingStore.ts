@@ -48,16 +48,8 @@ export type AlertRecord = {
 // ---------------------------------------------------------------------------
 
 type TradingState = {
-  cashBalance: number;
-  holdings: Record<string, HoldingRecord>;
-  orders: OrderRecord[];
-  transactions: TransactionRecord[];
   watchlist: string[];
   alerts: AlertRecord[];
-
-  // Trading actions
-  buy: (symbol: string, quantity: number) => { ok: boolean; message: string };
-  sell: (symbol: string, quantity: number) => { ok: boolean; message: string };
 
   // Watchlist actions
   addToWatchlist: (symbol: string) => void;
@@ -87,83 +79,10 @@ function nextId(prefix: string) {
 export const useTradingStore = create<TradingState>()(
   persist(
     (set, get) => ({
-      cashBalance: INITIAL_CASH,
-      holdings: {},
-      orders: [],
-      transactions: [],
       watchlist: [],
       alerts: [],
 
-      // ── BUY ──────────────────────────────────────────────────────────
-      buy: (symbol, quantity) => {
-        const stock = getStock(symbol.toUpperCase());
-        if (!stock) return { ok: false, message: "Stock not found in development provider." };
-        if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, message: "Quantity must be greater than zero." };
 
-        const total = stock.price * quantity;
-        const { cashBalance, holdings, orders, transactions } = get();
-
-        if (total > cashBalance) return { ok: false, message: "Insufficient virtual cash for this trade." };
-
-        const now = new Date().toISOString();
-        const existing = holdings[symbol] ?? { symbol, quantity: 0, averageBuyPrice: 0 };
-        const newAvg = calculateAverageBuyPrice(existing.quantity, existing.averageBuyPrice, quantity, stock.price);
-
-        set({
-          cashBalance: cashBalance - total,
-          holdings: {
-            ...holdings,
-            [symbol]: { symbol, quantity: existing.quantity + quantity, averageBuyPrice: newAvg },
-          },
-          orders: [
-            { id: nextId("ORD"), symbol, side: "BUY", quantity, price: stock.price, total, status: "EXECUTED", createdAt: now },
-            ...orders,
-          ],
-          transactions: [
-            { id: nextId("TXN"), symbol, side: "BUY", quantity, price: stock.price, total, createdAt: now },
-            ...transactions,
-          ],
-        });
-
-        return { ok: true, message: `Bought ${quantity} shares of ${symbol} at ₹${stock.price.toLocaleString("en-IN")}.` };
-      },
-
-      // ── SELL ─────────────────────────────────────────────────────────
-      sell: (symbol, quantity) => {
-        const stock = getStock(symbol.toUpperCase());
-        if (!stock) return { ok: false, message: "Stock not found in development provider." };
-        if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, message: "Quantity must be greater than zero." };
-
-        const { cashBalance, holdings, orders, transactions } = get();
-        const existing = holdings[symbol];
-        if (!existing || existing.quantity < quantity) return { ok: false, message: "Insufficient holdings for this trade." };
-
-        const total = stock.price * quantity;
-        const now = new Date().toISOString();
-        const remainingQty = existing.quantity - quantity;
-
-        const updatedHoldings = { ...holdings };
-        if (remainingQty <= 0) {
-          delete updatedHoldings[symbol];
-        } else {
-          updatedHoldings[symbol] = { ...existing, quantity: remainingQty };
-        }
-
-        set({
-          cashBalance: cashBalance + total,
-          holdings: updatedHoldings,
-          orders: [
-            { id: nextId("ORD"), symbol, side: "SELL", quantity, price: stock.price, total, status: "EXECUTED", createdAt: now },
-            ...orders,
-          ],
-          transactions: [
-            { id: nextId("TXN"), symbol, side: "SELL", quantity, price: stock.price, total, createdAt: now },
-            ...transactions,
-          ],
-        });
-
-        return { ok: true, message: `Sold ${quantity} shares of ${symbol} at ₹${stock.price.toLocaleString("en-IN")}.` };
-      },
 
       // ── Watchlist ────────────────────────────────────────────────────
       addToWatchlist: (symbol) => {

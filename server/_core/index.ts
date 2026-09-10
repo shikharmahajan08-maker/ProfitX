@@ -9,6 +9,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { syncMarketStocks } from "../services/stockSyncService";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -96,6 +97,10 @@ async function startServer() {
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
+
+  await syncMarketStocks().catch(err => {
+    console.error("Failed to sync market stocks:", err);
+  });
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);

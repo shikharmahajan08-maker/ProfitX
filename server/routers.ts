@@ -4,8 +4,9 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { developmentMarketDataProvider } from "./services/marketDataService";
-import { validateQuantity, validateTradeBalance } from "./services/portfolioService";
+import { validateQuantity, validateTradeBalance, getUserPortfolioState } from "./services/portfolioService";
 import { registerUser, loginUser } from "./services/authService";
+import { executeMarketOrder, getUserOrders, getUserTransactions } from "./services/tradingService";
 import { DEV_NEWS, MARKET_STOCKS } from "@shared/marketData";
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,19 @@ export const appRouter = router({
       initialVirtualCash: Number(process.env.INITIAL_VIRTUAL_CASH ?? 1000000),
       dataMode: "development-simulated" as const,
     })),
+
+    state: protectedProcedure.query(async ({ ctx }) => {
+      const portfolioState = await getUserPortfolioState(ctx.user.id);
+      return portfolioState;
+    }),
+
+    orders: protectedProcedure.query(async ({ ctx }) => {
+      return getUserOrders(ctx.user.id);
+    }),
+
+    transactions: protectedProcedure.query(async ({ ctx }) => {
+      return getUserTransactions(ctx.user.id);
+    }),
   }),
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -171,6 +185,30 @@ export const appRouter = router({
           price: quote.price,
           estimatedTotal: quote.price * input.quantity,
         };
+      }),
+
+    execute: protectedProcedure
+      .input(
+        z.object({
+          symbol: symbolInput.shape.symbol,
+          side: z.enum(["BUY", "SELL"]),
+          quantity: z.number().positive(),
+          idempotencyKey: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        validateQuantity(input.quantity);
+        const result = await executeMarketOrder(
+          ctx.user.id,
+          input.symbol,
+          input.side,
+          input.quantity,
+          input.idempotencyKey,
+        );
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+        return result;
       }),
   }),
 });

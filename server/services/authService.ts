@@ -20,6 +20,9 @@ const INITIAL_VIRTUAL_CASH = "1000000.00";
 // ---------------------------------------------------------------------------
 
 function getJwtSecret(): Uint8Array {
+  if (ENV.isProduction && !ENV.cookieSecret) {
+    throw new Error("JWT_SECRET environment variable is missing in production.");
+  }
   const secret = ENV.cookieSecret || "dev-secret-not-for-production-use";
   return new TextEncoder().encode(secret);
 }
@@ -71,23 +74,33 @@ export async function registerUser(
   // Generate a unique openId for email-registered users
   const openId = `email_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  // Insert user
-  const insertResult = await db.insert(users).values({
-    openId,
-    name: trimmedName,
-    email: normalizedEmail,
-    passwordHash,
-    loginMethod: "email",
-    lastSignedIn: new Date(),
-  });
+  let userId: number;
+  try {
+    userId = await db.transaction(async (tx) => {
+      // Insert user
+      const insertResult = await tx.insert(users).values({
+        openId,
+        name: trimmedName,
+        email: normalizedEmail,
+        passwordHash,
+        loginMethod: "email",
+        lastSignedIn: new Date(),
+      });
 
-  const userId = insertResult[0].insertId;
+      const newUserId = insertResult[0].insertId;
 
-  // Create portfolio with initial virtual cash
-  await db.insert(portfolios).values({
-    userId,
-    cashBalance: INITIAL_VIRTUAL_CASH,
-  });
+      // Create portfolio with initial virtual cash
+      await tx.insert(portfolios).values({
+        userId: newUserId,
+        cashBalance: INITIAL_VIRTUAL_CASH,
+      });
+
+      return newUserId;
+    });
+  } catch (error) {
+    console.error("[Auth] Registration transaction failed:", error);
+    return { success: false, error: "Registration failed due to a database error." };
+  }
 
   // Create session token
   const token = await createToken({

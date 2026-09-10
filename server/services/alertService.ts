@@ -1,6 +1,6 @@
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../db";
-import { alerts } from "../../drizzle/schema";
+import { alerts, stocks } from "../../drizzle/schema";
 import { MARKET_STOCKS } from "@shared/marketData";
 
 // ---------------------------------------------------------------------------
@@ -31,12 +31,18 @@ export async function createAlert(
 
   if (targetValue <= 0) return { success: false, error: "Target value must be positive" };
 
-  const stockIndex = MARKET_STOCKS.findIndex((s) => s.symbol === symbol.toUpperCase());
-  if (stockIndex === -1) return { success: false, error: "Stock not found" };
+  const stockResult = await db
+    .select({ id: stocks.id })
+    .from(stocks)
+    .where(eq(stocks.symbol, symbol.toUpperCase()))
+    .limit(1);
+
+  if (stockResult.length === 0) return { success: false, error: "Stock not found" };
+  const realStockId = stockResult[0].id;
 
   await db.insert(alerts).values({
     userId,
-    stockId: stockIndex,
+    stockId: realStockId,
     alertType,
     targetValue: targetValue.toFixed(2),
   });

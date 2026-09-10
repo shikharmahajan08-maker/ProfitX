@@ -104,7 +104,7 @@ export const holdings = mysqlTable("holdings", {
 
 export const orders = mysqlTable("orders", {
   id: int("id").autoincrement().primaryKey(),
-  idempotencyKey: varchar("idempotencyKey", { length: 64 }).unique(),
+  idempotencyKey: varchar("idempotencyKey", { length: 64 }),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   portfolioId: int("portfolioId").notNull().references(() => portfolios.id, { onDelete: "cascade" }),
   stockId: int("stockId").notNull().references(() => stocks.id, { onDelete: "restrict" }),
@@ -120,7 +120,7 @@ export const orders = mysqlTable("orders", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   userCreatedIdx: index("orders_user_created_idx").on(table.userId, table.createdAt),
-  idempotencyIdx: index("orders_idempotency_idx").on(table.idempotencyKey),
+  idempotencyIdx: uniqueIndex("orders_user_idempotency_idx").on(table.userId, table.idempotencyKey),
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════

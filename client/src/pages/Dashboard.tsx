@@ -8,10 +8,14 @@ import { DEV_NEWS, generateHistory, getStock } from "@shared/marketData";
 import { calculateHoldingMetrics } from "@shared/trading";
 import { useTradingStore } from "@/store/tradingStore";
 import { formatINR, formatNumber, formatSigned } from "@/utils/format";
+import { trpc } from "@/lib/trpc";
 
 export default function Dashboard() {
-  const { cashBalance, holdings, watchlist } = useTradingStore();
-  const positions = Object.values(holdings).map((holding) => ({ ...holding, stock: getStock(holding.symbol)! })).filter((item) => item.stock);
+  const { watchlist } = useTradingStore();
+  const { data: portfolio } = trpc.account.state.useQuery();
+  const cashBalance = portfolio?.cashBalance ?? 0;
+  const holdings = portfolio?.holdings ?? [];
+  const positions = holdings.map((holding) => ({ ...holding, stock: getStock(holding.symbol)! })).filter((item) => item.stock);
   const details = positions.map((position) => ({ ...position, metrics: calculateHoldingMetrics(position, position.stock.price) }));
   const invested = details.reduce((sum, item) => sum + item.metrics.investedValue, 0);
   const current = details.reduce((sum, item) => sum + item.metrics.currentValue, 0);

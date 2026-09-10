@@ -39,16 +39,12 @@ export async function getWatchlistSymbols(userId: number): Promise<string[]> {
   if (!watchlist) return [];
 
   const items = await db
-    .select({ stockId: watchlistItems.stockId })
+    .select({ symbol: stocks.symbol })
     .from(watchlistItems)
+    .innerJoin(stocks, eq(watchlistItems.stockId, stocks.id))
     .where(eq(watchlistItems.watchlistId, watchlist.id));
 
-  // In dev mode, map stockId back to symbols
-  // This is a placeholder — in production, we'd join with stocks table
-  return items.map((item) => {
-    const stock = MARKET_STOCKS[item.stockId];
-    return stock?.symbol ?? "";
-  }).filter(Boolean);
+  return items.map((item) => item.symbol);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,14 +58,19 @@ export async function addToWatchlist(userId: number, symbol: string): Promise<{ 
   const watchlist = await getOrCreateDefaultWatchlist(userId);
   if (!watchlist) return { success: false, error: "Could not create watchlist" };
 
-  // In dev mode, use index as stockId
-  const stockIndex = MARKET_STOCKS.findIndex((s) => s.symbol === symbol.toUpperCase());
-  if (stockIndex === -1) return { success: false, error: "Stock not found" };
+  const stockResult = await db
+    .select({ id: stocks.id })
+    .from(stocks)
+    .where(eq(stocks.symbol, symbol.toUpperCase()))
+    .limit(1);
+
+  if (stockResult.length === 0) return { success: false, error: "Stock not found" };
+  const realStockId = stockResult[0].id;
 
   try {
     await db.insert(watchlistItems).values({
       watchlistId: watchlist.id,
-      stockId: stockIndex,
+      stockId: realStockId,
     });
     return { success: true };
   } catch {
@@ -89,15 +90,21 @@ export async function removeFromWatchlist(userId: number, symbol: string): Promi
   const watchlist = await getOrCreateDefaultWatchlist(userId);
   if (!watchlist) return { success: false };
 
-  const stockIndex = MARKET_STOCKS.findIndex((s) => s.symbol === symbol.toUpperCase());
-  if (stockIndex === -1) return { success: false };
+  const stockResult = await db
+    .select({ id: stocks.id })
+    .from(stocks)
+    .where(eq(stocks.symbol, symbol.toUpperCase()))
+    .limit(1);
+
+  if (stockResult.length === 0) return { success: false };
+  const realStockId = stockResult[0].id;
 
   await db
     .delete(watchlistItems)
     .where(
       and(
         eq(watchlistItems.watchlistId, watchlist.id),
-        eq(watchlistItems.stockId, stockIndex),
+        eq(watchlistItems.stockId, realStockId),
       ),
     );
 
