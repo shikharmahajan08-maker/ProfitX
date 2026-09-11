@@ -13,7 +13,7 @@ const SALT_ROUNDS = 12;
 const JWT_ISSUER = "profitx";
 const JWT_AUDIENCE = "profitx-client";
 const JWT_EXPIRY = "30d";
-const INITIAL_VIRTUAL_CASH = "1000000.00";
+const INITIAL_VIRTUAL_CASH = process.env.INITIAL_VIRTUAL_CASH || "1000000.00";
 
 // ---------------------------------------------------------------------------
 // JWT Secret — derived from ENV.cookieSecret or fallback for dev

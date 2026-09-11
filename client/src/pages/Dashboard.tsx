@@ -6,13 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AllocationChart, MetricCard, PriceChart, SectionHeading } from "@/components/trading/TradingWidgets";
 import { DEV_NEWS, generateHistory, getStock } from "@shared/marketData";
 import { calculateHoldingMetrics } from "@shared/trading";
-import { useTradingStore } from "@/store/tradingStore";
 import { formatINR, formatNumber, formatSigned } from "@/utils/format";
 import { trpc } from "@/lib/trpc";
 
 export default function Dashboard() {
-  const { watchlist } = useTradingStore();
   const { data: portfolio } = trpc.account.state.useQuery();
+  const { data: watchlist = [] } = trpc.account.watchlist.useQuery();
   const cashBalance = portfolio?.cashBalance ?? 0;
   const holdings = portfolio?.holdings ?? [];
   const positions = holdings.map((holding) => ({ ...holding, stock: getStock(holding.symbol)! })).filter((item) => item.stock);

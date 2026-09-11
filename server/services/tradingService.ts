@@ -46,38 +46,10 @@ export async function executeMarketOrder(
     return { success: false, error: "Database is not available." };
   }
 
-  // ── Idempotency check ───────────────────────────────────────────────
-  if (idempotencyKey) {
-    const existingOrder = await db
-      .select({ id: orders.id, status: orders.status })
-      .from(orders)
-      .where(eq(orders.idempotencyKey, idempotencyKey))
-      .limit(1);
-
-    if (existingOrder.length > 0) {
-      const eo = existingOrder[0];
-      if (eo.status === "EXECUTED") {
-        return { success: false, error: "This order has already been executed (duplicate idempotency key)." };
-      }
-    }
-  }
-
   // ── Execute atomically using a transaction ──────────────────────────
   try {
     return await db.transaction(async (tx) => {
-      // 1. Get real stock ID
-      const stockResult = await tx
-        .select({ id: stocks.id })
-        .from(stocks)
-        .where(eq(stocks.symbol, symbol.toUpperCase()))
-        .limit(1);
-
-      if (stockResult.length === 0) {
-        throw new Error("VALIDATION_ERROR:Stock not found in database.");
-      }
-      const realStockId = stockResult[0].id;
-
-      // 2. Lock portfolio for update to prevent concurrent double-spends
+      // 1. Lock portfolio for update to prevent concurrent double-spends
       const lockedPortfolioResult = await tx.execute(
         sql`SELECT * FROM portfolios WHERE userId = ${userId} FOR UPDATE`,
       );
@@ -90,7 +62,35 @@ export async function executeMarketOrder(
       const portfolioId = portfolio.id;
       const cashBalance = parseFloat(portfolio.cashBalance);
 
-      // 3. Side-specific validation
+      // 2. Idempotency check — INSIDE the transaction, after portfolio lock
+      if (idempotencyKey) {
+        const existingOrder = await tx
+          .select({ id: orders.id, status: orders.status })
+          .from(orders)
+          .where(and(eq(orders.idempotencyKey, idempotencyKey), eq(orders.userId, userId)))
+          .limit(1);
+
+        if (existingOrder.length > 0) {
+          const eo = existingOrder[0];
+          if (eo.status === "EXECUTED") {
+            throw new Error("VALIDATION_ERROR:This order has already been executed (duplicate idempotency key).");
+          }
+        }
+      }
+
+      // 3. Get real stock ID
+      const stockResult = await tx
+        .select({ id: stocks.id })
+        .from(stocks)
+        .where(eq(stocks.symbol, symbol.toUpperCase()))
+        .limit(1);
+
+      if (stockResult.length === 0) {
+        throw new Error("VALIDATION_ERROR:Stock not found in database.");
+      }
+      const realStockId = stockResult[0].id;
+
+      // 4. Side-specific validation
       const price = stock.price;
       const totalAmount = price * quantity;
       const quantityStr = quantity.toFixed(4);
@@ -123,7 +123,7 @@ export async function executeMarketOrder(
         }
       }
 
-      // 4. Create the order record
+      // 5. Create the order record
       const orderResult = await tx.insert(orders).values({
         idempotencyKey: idempotencyKey ?? null,
         userId,
@@ -140,14 +140,14 @@ export async function executeMarketOrder(
 
       const orderId = orderResult[0].insertId;
 
-      // 5. Update cash balance
+      // 6. Update cash balance
       const newCash = side === "BUY" ? cashBalance - totalAmount : cashBalance + totalAmount;
       await tx
         .update(portfolios)
         .set({ cashBalance: newCash.toFixed(2) })
         .where(eq(portfolios.id, portfolioId));
 
-      // 6. Update holdings
+      // 7. Update holdings
       if (side === "BUY") {
         const holdingCheck = await tx.execute(
           sql`SELECT * FROM holdings WHERE portfolioId = ${portfolioId} AND stockId = ${realStockId} FOR UPDATE`,
@@ -191,7 +191,7 @@ export async function executeMarketOrder(
         }
       }
 
-      // 7. Create transaction record
+      // 8. Create transaction record
       await tx.insert(transactions).values({
         userId,
         portfolioId,

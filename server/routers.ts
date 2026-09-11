@@ -7,6 +7,8 @@ import { developmentMarketDataProvider } from "./services/marketDataService";
 import { validateQuantity, validateTradeBalance, getUserPortfolioState } from "./services/portfolioService";
 import { registerUser, loginUser } from "./services/authService";
 import { executeMarketOrder, getUserOrders, getUserTransactions } from "./services/tradingService";
+import { getWatchlistSymbols, addToWatchlist, removeFromWatchlist } from "./services/watchlistService";
+import { getUserAlerts, createAlert, toggleAlert, deleteAlert } from "./services/alertService";
 import { DEV_NEWS, MARKET_STOCKS } from "@shared/marketData";
 
 // ---------------------------------------------------------------------------
@@ -109,6 +111,33 @@ export const appRouter = router({
     transactions: protectedProcedure.query(async ({ ctx }) => {
       return getUserTransactions(ctx.user.id);
     }),
+
+    watchlist: protectedProcedure.query(({ ctx }) => getWatchlistSymbols(ctx.user.id)),
+    alerts: protectedProcedure.query(({ ctx }) => getUserAlerts(ctx.user.id)),
+    
+    addToWatchlist: protectedProcedure
+      .input(symbolInput)
+      .mutation(({ ctx, input }) => addToWatchlist(ctx.user.id, input.symbol)),
+      
+    removeFromWatchlist: protectedProcedure
+      .input(symbolInput)
+      .mutation(({ ctx, input }) => removeFromWatchlist(ctx.user.id, input.symbol)),
+      
+    createAlert: protectedProcedure
+      .input(z.object({ 
+        symbol: symbolInput.shape.symbol, 
+        type: z.enum(["PRICE_ABOVE", "PRICE_BELOW"]), 
+        target: z.number().positive() 
+      }))
+      .mutation(({ ctx, input }) => createAlert(ctx.user.id, input.symbol, input.type, input.target)),
+      
+    toggleAlert: protectedProcedure
+      .input(z.object({ alertId: z.number() }))
+      .mutation(({ ctx, input }) => toggleAlert(ctx.user.id, input.alertId)),
+      
+    deleteAlert: protectedProcedure
+      .input(z.object({ alertId: z.number() }))
+      .mutation(({ ctx, input }) => deleteAlert(ctx.user.id, input.alertId)),
   }),
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -168,7 +197,7 @@ export const appRouter = router({
         z.object({
           symbol: symbolInput.shape.symbol,
           side: z.enum(["BUY", "SELL"]),
-          quantity: z.number().positive(),
+          quantity: z.number().positive().int(),
         }),
       )
       .mutation(({ input }) => {
@@ -192,7 +221,7 @@ export const appRouter = router({
         z.object({
           symbol: symbolInput.shape.symbol,
           side: z.enum(["BUY", "SELL"]),
-          quantity: z.number().positive(),
+          quantity: z.number().positive().int(),
           idempotencyKey: z.string().optional(),
         }),
       )
