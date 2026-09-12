@@ -12,6 +12,7 @@ import { getUserAlerts, createAlert, toggleAlert, deleteAlert } from "./services
 import { getDb } from "./db";
 import { eq } from "drizzle-orm";
 import { stocks } from "../drizzle/schema";
+import { analyzeStockRisk } from "./services/risk/riskEngine";
 import { DEV_NEWS, MARKET_STOCKS } from "@shared/marketData";
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,26 @@ export const appRouter = router({
           throw new Error(result.error);
         }
         return result;
+      }),
+  }),
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // RISK ANALYSIS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  risk: router({
+    stock: protectedProcedure
+      .input(
+        z.object({
+          symbol: z.string().min(1).max(16).regex(/^[A-Za-z0-9]+$/),
+          lookbackDays: z.number().int().min(5).max(1260).default(252),
+          confidenceLevel: z.number().min(0.9).max(0.99).default(0.95),
+          riskFreeRate: z.number().min(0).max(0.5).default(0.065),
+          benchmarkSymbol: z.string().optional(),
+        }),
+      )
+      .query(async ({ input }) => {
+        return analyzeStockRisk(input);
       }),
   }),
 });
