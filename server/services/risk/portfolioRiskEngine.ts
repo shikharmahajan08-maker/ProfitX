@@ -82,12 +82,17 @@ export async function analyzePortfolioRisk(
 
   // Handle empty or zero-value portfolio
   if (totalMarketValue === 0 || portfolioHoldings.length === 0) {
-    return generateEmptyPortfolioResult(portfolio.id);
+    return generateEmptyPortfolioResult(portfolio.id, Number(portfolio.cashBalance) || 0);
   }
+
+  const cashBalance = Number(portfolio.cashBalance) || 0;
+  const totalPortfolioValue = totalMarketValue + cashBalance;
+  const cashWeight = cashBalance / totalPortfolioValue;
+  const investedWeight = totalMarketValue / totalPortfolioValue;
 
   const weights: Record<string, number> = {};
   for (const ph of portfolioHoldings) {
-    ph.weight = ph.marketValue / totalMarketValue;
+    ph.weight = ph.marketValue / totalMarketValue; // Normalized within risky asset sleeve
     weights[ph.symbol] = ph.weight;
   }
 
@@ -119,9 +124,52 @@ export async function analyzePortfolioRisk(
     });
   }
 
-  // 5. Mathematical Metrics
+  // 5. Data Quality Checks
+  const missingHoldings: string[] = [];
+  for (const ph of portfolioHoldings) {
+    if (!priceHistory[ph.symbol] || priceHistory[ph.symbol].length < 30) {
+      missingHoldings.push(ph.symbol);
+    }
+  }
+
   const alignedData = alignReturns(priceHistory);
   const portReturns = calculatePortfolioReturns(weights, alignedData);
+  
+  const hasSufficientData = missingHoldings.length === 0 && portReturns.length >= 30;
+
+  if (!hasSufficientData) {
+    return {
+      portfolioId: portfolio.id,
+      totalMarketValue,
+      cashBalance,
+      totalPortfolioValue,
+      cashWeight,
+      investedWeight,
+      holdings: portfolioHoldings,
+      score: 0,
+      classification: { label: "Insufficient Data", color: "text-slate-400", hex: "#94a3b8" },
+      metrics: { portfolioVolatility: null, maxDrawdown: null, sharpe: null, sortino: null, var: null, cvar: null },
+      contributions: [],
+      diversification: calculateDiversificationMetrics(weights),
+      correlationMatrix: {},
+      stressTests: [],
+      components: [],
+      explanations: [
+        missingHoldings.length > 0 
+          ? `Risk engine paused: Missing historical data for ${missingHoldings.join(", ")}.`
+          : `Risk engine paused: Insufficient overlapping history (only ${portReturns.length} days). Minimum 30 days required.`
+      ],
+      assumptions: { riskFreeRate: DEFAULT_RISK_FREE_RATE, confidenceLevel: DEFAULT_CONFIDENCE },
+      dataQuality: { 
+        hasSufficientData: false, 
+        isBenchmarkMissing: true, 
+        missingHoldings,
+        warnings: ["Insufficient overlapping data to calculate portfolio covariance."] 
+      },
+    };
+  }
+
+  // 6. Mathematical Metrics
   const portEquity = reconstructPortfolioEquityCurve(portReturns);
   
   const covMatrix = calculateCovarianceMatrix(alignedData);
@@ -177,6 +225,10 @@ export async function analyzePortfolioRisk(
   return {
     portfolioId: portfolio.id,
     totalMarketValue,
+    cashBalance,
+    totalPortfolioValue,
+    cashWeight,
+    investedWeight,
     holdings: portfolioHoldings,
     score,
     classification,
@@ -192,9 +244,10 @@ export async function analyzePortfolioRisk(
       confidenceLevel: DEFAULT_CONFIDENCE,
     },
     dataQuality: {
-      hasSufficientData: portReturns.length >= 30,
+      hasSufficientData: true,
       isBenchmarkMissing: true,
-      warnings: portReturns.length < 30 ? ["Insufficient data for robust analysis (< 30 days overlapping)."] : [],
+      missingHoldings: [],
+      warnings: [],
     },
   };
 }
@@ -237,10 +290,14 @@ function generateStressTests(
   return tests;
 }
 
-function generateEmptyPortfolioResult(portfolioId: number): PortfolioRiskResult {
+function generateEmptyPortfolioResult(portfolioId: number, cashBalance: number = 0): PortfolioRiskResult {
   return {
     portfolioId,
     totalMarketValue: 0,
+    cashBalance,
+    totalPortfolioValue: cashBalance,
+    cashWeight: cashBalance > 0 ? 1 : 0,
+    investedWeight: 0,
     holdings: [],
     score: 0,
     classification: { label: "N/A", color: "text-slate-400", hex: "#94a3b8" },
@@ -252,6 +309,6 @@ function generateEmptyPortfolioResult(portfolioId: number): PortfolioRiskResult 
     components: [],
     explanations: ["Portfolio is empty or holds zero market value."],
     assumptions: { riskFreeRate: 0.065, confidenceLevel: 0.95 },
-    dataQuality: { hasSufficientData: false, isBenchmarkMissing: true, warnings: ["No data available."] },
+    dataQuality: { hasSufficientData: false, isBenchmarkMissing: true, missingHoldings: [], warnings: ["No data available."] },
   };
 }

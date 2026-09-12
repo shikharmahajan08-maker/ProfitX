@@ -4,7 +4,8 @@ The Portfolio Risk Engine (Phase 3) builds upon the single-stock primitives deve
 
 ## Core Assumptions
 - **Constant Weight Assumption**: For point-in-time risk analysis, the engine applies the portfolio's *current* weights to historical market data. It does not attempt to simulate historical rebalancing or trading events.
-- **Missing Data Exclusion**: To ensure covariance mathematical validity, only the overlapping dates of held stocks are considered.
+- **Cash Treatment**: Portfolio risk metrics describe only the *invested* (risky-asset) sleeve of the portfolio. Cash is treated as a zero-volatility buffer and its relative weight is exposed, but covariance mapping is normalized across active investments to ensure percentage risk contributions correctly sum to 100%.
+- **Missing Data Exclusion & Minimums**: To ensure covariance mathematical validity, the engine intersects dates. A strict minimum of 30 overlapping historical observations is enforced. If any held stock lacks this history, the engine refuses to calculate a deceptive aggregate score.
 - **No Benchmarks for Beta**: Unless a specific benchmark is provided, Beta defaults to `null` to avoid fabricating correlation data.
 
 ## Key Portfolio Metrics

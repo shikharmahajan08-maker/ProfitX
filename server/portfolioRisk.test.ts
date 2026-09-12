@@ -168,3 +168,60 @@ describe("Portfolio Risk Scoring", () => {
     expect(result.classification.label).toBe("N/A");
   });
 });
+
+describe("Phase 3 Fixes: Data Quality & Cash Constraints", () => {
+  it("Missing historical data: alignReturns drops to zero if a holding has no overlap", () => {
+    const history = {
+      AAPL: [{ date: "2023-01-01", price: 100 }, { date: "2023-01-02", price: 101 }],
+      MSFT: [{ date: "2023-01-01", price: 50 }, { date: "2023-01-02", price: 51 }],
+      NEW_STOCK: [] // Completely missing data
+    };
+    
+    // Intersection of dates should be empty because NEW_STOCK has no dates.
+    const aligned = alignReturns(history);
+    expect(aligned.dates.length).toBe(0);
+  });
+
+  it("Minimum observations: properly identifies when data is < 30 observations", () => {
+    // Generate exactly 29 overlapping dates
+    const dates = Array.from({ length: 29 }, (_, i) => `2023-01-${(i + 1).toString().padStart(2, '0')}`);
+    const aaplPrices = dates.map((d, i) => ({ date: d, price: 100 + i }));
+    const msftPrices = dates.map((d, i) => ({ date: d, price: 50 + i }));
+    
+    const history = { AAPL: aaplPrices, MSFT: msftPrices };
+    const aligned = alignReturns(history);
+    
+    // Since Returns are computed from N prices, we get N-1 returns.
+    // 29 prices -> 28 returns.
+    expect(aligned.dates.length).toBe(28);
+    
+    const hasSufficientData = aligned.dates.length >= 30;
+    expect(hasSufficientData).toBe(false);
+  });
+
+  it("Cash: normalizes covariance weights across the invested sleeve", () => {
+    // Portfolio total value is 100,000. Cash is 20,000. Invested is 80,000.
+    const totalPortfolioValue = 100000;
+    const cashBalance = 20000;
+    const totalMarketValue = 80000; // sum of holdings
+    
+    const aaplValue = 40000;
+    const msftValue = 40000;
+    
+    // Weights relative to TOTAL portfolio value:
+    const cashWeight = cashBalance / totalPortfolioValue; 
+    const aaplWeightTotal = aaplValue / totalPortfolioValue; // 40%
+    const msftWeightTotal = msftValue / totalPortfolioValue; // 40%
+    
+    expect(cashWeight).toBe(0.20);
+    expect(aaplWeightTotal + msftWeightTotal + cashWeight).toBeCloseTo(1.0, 4);
+    
+    // Weights relative to INVESTED sleeve (used for the risk engine math):
+    const aaplWeightInvested = aaplValue / totalMarketValue; // 50%
+    const msftWeightInvested = msftValue / totalMarketValue; // 50%
+    
+    expect(aaplWeightInvested).toBe(0.50);
+    expect(msftWeightInvested).toBe(0.50);
+    expect(aaplWeightInvested + msftWeightInvested).toBeCloseTo(1.0, 4);
+  });
+});

@@ -15,11 +15,25 @@ export function PortfolioRiskDashboard({ riskData }: { riskData: any }) {
     );
   }
 
-  const { score, classification, metrics, contributions, diversification, stressTests, explanations, dataQuality } = riskData;
+  const { score, classification, metrics, contributions, diversification, stressTests, explanations, dataQuality, cashBalance, totalPortfolioValue, cashWeight, investedWeight } = riskData;
+
+  const isInsufficient = !dataQuality.hasSufficientData;
 
   return (
     <div className="space-y-6">
       <SectionHeading title="Portfolio Risk Engine" subtitle="Deterministic risk analysis based on historical asset variance and correlations." />
+
+      {isInsufficient && (
+        <div className="rounded-lg bg-amber-50 p-4 border border-amber-200">
+          <div className="flex items-center gap-2 text-amber-800 font-semibold mb-2">
+            <AlertTriangle className="h-5 w-5" />
+            Risk Engine Paused: Insufficient Data
+          </div>
+          <p className="text-sm text-amber-700">
+            {explanations[0] || dataQuality.warnings[0]}
+          </p>
+        </div>
+      )}
 
       {/* Main Score & Metrics */}
       <div className="grid gap-6 md:grid-cols-3">
@@ -75,7 +89,7 @@ export function PortfolioRiskDashboard({ riskData }: { riskData: any }) {
             <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-500">
               <BarChart3 className="h-4 w-4" /> RISK CONTRIBUTORS
             </CardTitle>
-            <CardDescription className="text-xs">Percentage of total portfolio variance.</CardDescription>
+            <CardDescription className="text-xs">Percentage contribution to total portfolio risk. Cash ({cashWeight ? (cashWeight * 100).toFixed(1) : 0}%) acts as a zero-volatility buffer.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {contributions.sort((a: any, b: any) => b.percentageRiskContribution - a.percentageRiskContribution).map((c: any) => (

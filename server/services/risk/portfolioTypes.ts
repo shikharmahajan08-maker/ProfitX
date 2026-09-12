@@ -33,6 +33,7 @@ export interface PortfolioDataQuality {
   hasSufficientData: boolean;
   isBenchmarkMissing: boolean;
   warnings: string[];
+  missingHoldings: string[];
 }
 
 export interface PortfolioRiskAssumptions {
@@ -106,7 +107,11 @@ export interface StressTestScenario {
 
 export interface PortfolioRiskResult {
   portfolioId: number;
-  totalMarketValue: number;
+  totalMarketValue: number; // Value of all risky assets (invested)
+  cashBalance: number;
+  totalPortfolioValue: number; // cashBalance + totalMarketValue
+  cashWeight: number;
+  investedWeight: number;
   holdings: PortfolioHolding[];
   
   score: number;
