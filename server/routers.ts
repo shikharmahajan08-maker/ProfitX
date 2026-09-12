@@ -9,6 +9,9 @@ import { registerUser, loginUser } from "./services/authService";
 import { executeMarketOrder, getUserOrders, getUserTransactions } from "./services/tradingService";
 import { getWatchlistSymbols, addToWatchlist, removeFromWatchlist } from "./services/watchlistService";
 import { getUserAlerts, createAlert, toggleAlert, deleteAlert } from "./services/alertService";
+import { getDb } from "./db";
+import { eq } from "drizzle-orm";
+import { stocks } from "../drizzle/schema";
 import { DEV_NEWS, MARKET_STOCKS } from "@shared/marketData";
 
 // ---------------------------------------------------------------------------
@@ -202,10 +205,9 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         validateQuantity(input.quantity);
-        const db = await import("./db").then(m => m.getDb());
+        
+        const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const { stocks } = await import("../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
         
         const stockResult = await db.select().from(stocks).where(eq(stocks.symbol, input.symbol.toUpperCase())).limit(1);
         const quote = stockResult[0];
