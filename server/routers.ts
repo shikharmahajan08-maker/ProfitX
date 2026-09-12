@@ -200,19 +200,25 @@ export const appRouter = router({
           quantity: z.number().positive().int(),
         }),
       )
-      .mutation(({ input }) => {
+      .mutation(async ({ input }) => {
         validateQuantity(input.quantity);
-        const quote = MARKET_STOCKS.find(
-          (stock) => stock.symbol === input.symbol.toUpperCase(),
-        );
-        if (!quote) throw new Error("Stock is not available in the development provider");
+        const db = await import("./db").then(m => m.getDb());
+        if (!db) throw new Error("Database not available");
+        const { stocks } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        
+        const stockResult = await db.select().from(stocks).where(eq(stocks.symbol, input.symbol.toUpperCase())).limit(1);
+        const quote = stockResult[0];
+        if (!quote) throw new Error("Stock is not available in the database");
+        
+        const currentPrice = parseFloat(quote.currentPrice as any);
         return {
           valid: true,
           symbol: quote.symbol,
           side: input.side,
           quantity: input.quantity,
-          price: quote.price,
-          estimatedTotal: quote.price * input.quantity,
+          price: currentPrice,
+          estimatedTotal: currentPrice * input.quantity,
         };
       }),
 

@@ -36,11 +36,6 @@ export async function executeMarketOrder(
     return { success: false, error: "Quantity must be a positive number." };
   }
 
-  const stock = getStock(symbol.toUpperCase());
-  if (!stock) {
-    return { success: false, error: `Stock ${symbol} is not available in the development provider.` };
-  }
-
   const db = await getDb();
   if (!db) {
     return { success: false, error: "Database is not available." };
@@ -78,9 +73,9 @@ export async function executeMarketOrder(
         }
       }
 
-      // 3. Get real stock ID
+      // 3. Get real stock ID and current price from database
       const stockResult = await tx
-        .select({ id: stocks.id })
+        .select({ id: stocks.id, currentPrice: stocks.currentPrice })
         .from(stocks)
         .where(eq(stocks.symbol, symbol.toUpperCase()))
         .limit(1);
@@ -89,9 +84,9 @@ export async function executeMarketOrder(
         throw new Error("VALIDATION_ERROR:Stock not found in database.");
       }
       const realStockId = stockResult[0].id;
+      const price = parseFloat(stockResult[0].currentPrice);
 
       // 4. Side-specific validation
-      const price = stock.price;
       const totalAmount = price * quantity;
       const quantityStr = quantity.toFixed(4);
       const priceStr = price.toFixed(2);
