@@ -19,7 +19,14 @@ export interface PortfolioHolding {
   quantity: number;
   currentPrice: number;
   marketValue: number;
-  weight: number;
+  weight: number; // This can be left as 0 and recalculated, but let's keep it
+}
+
+export interface PortfolioSnapshot {
+  portfolioId: number;
+  holdings: PortfolioHolding[];
+  cashBalance: number;
+  priceHistory: Record<string, { date: string; price: number }[]>;
 }
 
 export interface PortfolioRiskComponent {

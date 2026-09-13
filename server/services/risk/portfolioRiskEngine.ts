@@ -5,7 +5,7 @@
 import { getDb } from "../../db";
 import { eq, inArray, asc } from "drizzle-orm";
 import { portfolios, holdings, stocks, marketData } from "../../../drizzle/schema";
-import type { PortfolioRiskResult, PortfolioHolding, StressTestScenario } from "./portfolioTypes";
+import type { PortfolioRiskResult, PortfolioHolding, StressTestScenario, PortfolioSnapshot } from "./portfolioTypes";
 import {
   alignReturns,
   calculatePortfolioReturns,
@@ -29,9 +29,7 @@ import { calculatePortfolioRiskScore, generatePortfolioExplanations } from "./po
 const DEFAULT_RISK_FREE_RATE = 0.065; // 6.5% standard simulated RFR
 const DEFAULT_CONFIDENCE = 0.95;
 
-export async function analyzePortfolioRisk(
-  userId: number,
-): Promise<PortfolioRiskResult> {
+export async function getPortfolioSnapshot(userId: number): Promise<PortfolioSnapshot> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -59,8 +57,7 @@ export async function analyzePortfolioRisk(
     .innerJoin(stocks, eq(holdings.stockId, stocks.id))
     .where(eq(holdings.portfolioId, portfolio.id));
 
-  // 3. Compute Weights
-  let totalMarketValue = 0;
+  // 3. Compute initial holdings array
   const portfolioHoldings: PortfolioHolding[] = [];
   
   for (const h of holdingsData) {
@@ -68,60 +65,88 @@ export async function analyzePortfolioRisk(
     const price = Number(h.currentPrice);
     if (qty <= 0 || price <= 0) continue;
     
-    const mv = qty * price;
-    totalMarketValue += mv;
-    
     portfolioHoldings.push({
       symbol: h.symbol,
       quantity: qty,
       currentPrice: price,
-      marketValue: mv,
-      weight: 0, // Assigned below
+      marketValue: qty * price,
+      weight: 0,
     });
   }
 
-  // Handle empty or zero-value portfolio
-  if (totalMarketValue === 0 || portfolioHoldings.length === 0) {
-    return generateEmptyPortfolioResult(portfolio.id, Number(portfolio.cashBalance) || 0);
+  // 4. Fetch Historical Market Data for all held stocks
+  const stockIds = holdingsData.map(h => h.stockId);
+  const priceHistory: Record<string, { date: string; price: number }[]> = {};
+
+  if (stockIds.length > 0) {
+    const historicalRows = await db
+      .select({
+        symbol: stocks.symbol,
+        timestamp: marketData.timestamp,
+        close: marketData.close,
+      })
+      .from(marketData)
+      .innerJoin(stocks, eq(marketData.stockId, stocks.id))
+      .where(inArray(marketData.stockId, stockIds))
+      .orderBy(asc(marketData.timestamp));
+
+    for (const row of historicalRows) {
+      const symbol = row.symbol;
+      if (!priceHistory[symbol]) {
+        priceHistory[symbol] = [];
+      }
+      priceHistory[symbol].push({
+        date: row.timestamp.toISOString().split("T")[0],
+        price: Number(row.close),
+      });
+    }
   }
 
-  const cashBalance = Number(portfolio.cashBalance) || 0;
+  return {
+    portfolioId: portfolio.id,
+    holdings: portfolioHoldings,
+    cashBalance: Number(portfolio.cashBalance) || 0,
+    priceHistory,
+  };
+}
+
+export async function analyzePortfolioRisk(
+  userId: number,
+): Promise<PortfolioRiskResult> {
+  const snapshot = await getPortfolioSnapshot(userId);
+
+  return calculateRiskFromSnapshot(snapshot);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Pure Risk Calculation Pipeline
+// ───────────────────────────────────────────────────────────────────────────
+
+export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): PortfolioRiskResult {
+  const { portfolioId, holdings, cashBalance, priceHistory } = snapshot;
+
+  let totalMarketValue = 0;
+  for (const h of holdings) {
+    if (h.quantity > 0 && h.currentPrice > 0) {
+      // Re-evaluate market value just in case scenario transformed quantity/price
+      h.marketValue = h.quantity * h.currentPrice;
+      totalMarketValue += h.marketValue;
+    }
+  }
+
+  // Handle empty or zero-value portfolio
+  if (totalMarketValue === 0 || holdings.length === 0) {
+    return generateEmptyPortfolioResult(portfolioId, cashBalance);
+  }
+
   const totalPortfolioValue = totalMarketValue + cashBalance;
   const cashWeight = cashBalance / totalPortfolioValue;
   const investedWeight = totalMarketValue / totalPortfolioValue;
 
   const weights: Record<string, number> = {};
-  for (const ph of portfolioHoldings) {
+  for (const ph of holdings) {
     ph.weight = ph.marketValue / totalMarketValue; // Normalized within risky asset sleeve
     weights[ph.symbol] = ph.weight;
-  }
-
-  // 4. Fetch Historical Market Data for all held stocks
-  const stockIds = holdingsData.map(h => h.stockId);
-  const history = await db
-    .select({
-      stockId: marketData.stockId,
-      timestamp: marketData.timestamp,
-      close: marketData.close,
-    })
-    .from(marketData)
-    .where(inArray(marketData.stockId, stockIds))
-    .orderBy(asc(marketData.timestamp));
-
-  // Map stockId -> symbol for grouping
-  const idToSymbol: Record<number, string> = {};
-  for (const h of holdingsData) {
-    idToSymbol[h.stockId] = h.symbol;
-  }
-
-  const priceHistory: Record<string, { date: string; price: number }[]> = {};
-  for (const row of history) {
-    const symbol = idToSymbol[row.stockId];
-    if (!priceHistory[symbol]) priceHistory[symbol] = [];
-    priceHistory[symbol].push({
-      date: row.timestamp.toISOString().split("T")[0],
-      price: Number(row.close),
-    });
   }
 
   // 5. Data Quality Checks
@@ -129,7 +154,7 @@ export async function analyzePortfolioRisk(
   const alignedSymbols = new Set(alignedData.symbols);
 
   const missingHoldings: string[] = [];
-  for (const ph of portfolioHoldings) {
+  for (const ph of holdings) {
     if (!alignedSymbols.has(ph.symbol)) {
       missingHoldings.push(ph.symbol);
     }
@@ -141,13 +166,13 @@ export async function analyzePortfolioRisk(
 
   if (!hasSufficientData) {
     return {
-      portfolioId: portfolio.id,
+      portfolioId,
       totalMarketValue,
       cashBalance,
       totalPortfolioValue,
       cashWeight,
       investedWeight,
-      holdings: portfolioHoldings,
+      holdings,
       score: 0,
       classification: { label: "Insufficient Data", color: "text-slate-400", hex: "#94a3b8" },
       metrics: { portfolioVolatility: null, maxDrawdown: null, sharpe: null, sortino: null, var: null, cvar: null },
@@ -201,8 +226,7 @@ export async function analyzePortfolioRisk(
   };
 
   const { score, classification, components } = calculatePortfolioRiskScore(metrics, diversification);
-  // Map risk contributions back to array form
-  const contributions = portfolioHoldings.map(h => {
+  const contributions = holdings.map(h => {
     const rc = riskContributions[h.symbol];
     // Calculate standalone vol for comparison
     let standaloneVol = 0;
@@ -221,17 +245,16 @@ export async function analyzePortfolioRisk(
 
   const explanations = generatePortfolioExplanations(diversification, contributions, score);
 
-  // 7. Stress Testing (Deterministic Scenarios)
-  const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, portfolioHoldings);
+  const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, holdings);
 
   return {
-    portfolioId: portfolio.id,
+    portfolioId,
     totalMarketValue,
     cashBalance,
     totalPortfolioValue,
     cashWeight,
     investedWeight,
-    holdings: portfolioHoldings,
+    holdings,
     score,
     classification,
     metrics,
