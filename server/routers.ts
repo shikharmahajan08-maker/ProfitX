@@ -179,18 +179,6 @@ export const appRouter = router({
     sectors: publicProcedure.query(() =>
       Array.from(new Set(MARKET_STOCKS.map((stock) => stock.sector))).sort(),
     ),
-    scenario: protectedProcedure
-      .input(scenarioRequestSchema)
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await analyzeScenario(ctx.user.id, input);
-        } catch (error: any) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message || "Failed to analyze scenario.",
-          });
-        }
-      }),
   }),
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -290,6 +278,20 @@ export const appRouter = router({
     portfolio: protectedProcedure
       .query(async ({ ctx }) => {
         return analyzePortfolioRisk(ctx.user.id);
+      }),
+
+    // Scenario Risk Engine
+    scenario: protectedProcedure
+      .input(scenarioRequestSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await analyzeScenario(ctx.user.id, input);
+        } catch (error: any) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message || "Failed to analyze scenario.",
+          });
+        }
       }),
   }),
 });

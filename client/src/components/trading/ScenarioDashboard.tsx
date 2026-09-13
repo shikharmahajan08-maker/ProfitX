@@ -13,7 +13,7 @@ export function ScenarioDashboard({ portfolioId }: { portfolioId: number }) {
   const [percentage, setPercentage] = useState<string>("10");
   const [symbol, setSymbol] = useState<string>("");
 
-  const scenarioMutation = (trpc.risk as any).scenario.useMutation();
+  const scenarioMutation = trpc.risk.scenario.useMutation();
 
   const handleRunScenario = () => {
     let transformation: any = null;

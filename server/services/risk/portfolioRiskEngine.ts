@@ -123,19 +123,22 @@ export async function analyzePortfolioRisk(
 // ───────────────────────────────────────────────────────────────────────────
 
 export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): PortfolioRiskResult {
-  const { portfolioId, holdings, cashBalance, priceHistory } = snapshot;
+  const { portfolioId, cashBalance, priceHistory } = snapshot;
+
+  // Clone holdings to avoid mutating the supplied snapshot
+  const clonedHoldings = snapshot.holdings.map(h => ({ ...h }));
 
   let totalMarketValue = 0;
-  for (const h of holdings) {
+  for (const h of clonedHoldings) {
     if (h.quantity > 0 && h.currentPrice > 0) {
-      // Re-evaluate market value just in case scenario transformed quantity/price
+      // Re-evaluate market value safely on the clone
       h.marketValue = h.quantity * h.currentPrice;
       totalMarketValue += h.marketValue;
     }
   }
 
   // Handle empty or zero-value portfolio
-  if (totalMarketValue === 0 || holdings.length === 0) {
+  if (totalMarketValue === 0 || clonedHoldings.length === 0) {
     return generateEmptyPortfolioResult(portfolioId, cashBalance);
   }
 
@@ -144,7 +147,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
   const investedWeight = totalMarketValue / totalPortfolioValue;
 
   const weights: Record<string, number> = {};
-  for (const ph of holdings) {
+  for (const ph of clonedHoldings) {
     ph.weight = ph.marketValue / totalMarketValue; // Normalized within risky asset sleeve
     weights[ph.symbol] = ph.weight;
   }
@@ -154,7 +157,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
   const alignedSymbols = new Set(alignedData.symbols);
 
   const missingHoldings: string[] = [];
-  for (const ph of holdings) {
+  for (const ph of clonedHoldings) {
     if (!alignedSymbols.has(ph.symbol)) {
       missingHoldings.push(ph.symbol);
     }
@@ -172,7 +175,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
       totalPortfolioValue,
       cashWeight,
       investedWeight,
-      holdings,
+      holdings: clonedHoldings,
       score: 0,
       classification: { label: "Insufficient Data", color: "text-slate-400", hex: "#94a3b8" },
       metrics: { portfolioVolatility: null, maxDrawdown: null, sharpe: null, sortino: null, var: null, cvar: null },
@@ -226,7 +229,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
   };
 
   const { score, classification, components } = calculatePortfolioRiskScore(metrics, diversification);
-  const contributions = holdings.map(h => {
+  const contributions = clonedHoldings.map(h => {
     const rc = riskContributions[h.symbol];
     // Calculate standalone vol for comparison
     let standaloneVol = 0;
@@ -245,7 +248,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
 
   const explanations = generatePortfolioExplanations(diversification, contributions, score);
 
-  const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, holdings);
+  const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, clonedHoldings);
 
   return {
     portfolioId,
@@ -254,7 +257,7 @@ export function calculateRiskFromSnapshot(snapshot: PortfolioSnapshot): Portfoli
     totalPortfolioValue,
     cashWeight,
     investedWeight,
-    holdings,
+    holdings: clonedHoldings,
     score,
     classification,
     metrics,
