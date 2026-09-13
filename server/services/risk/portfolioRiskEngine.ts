@@ -125,14 +125,16 @@ export async function analyzePortfolioRisk(
   }
 
   // 5. Data Quality Checks
+  const alignedData = alignReturns(priceHistory);
+  const alignedSymbols = new Set(alignedData.symbols);
+
   const missingHoldings: string[] = [];
   for (const ph of portfolioHoldings) {
-    if (!priceHistory[ph.symbol] || priceHistory[ph.symbol].length < 30) {
+    if (!alignedSymbols.has(ph.symbol)) {
       missingHoldings.push(ph.symbol);
     }
   }
 
-  const alignedData = alignReturns(priceHistory);
   const portReturns = calculatePortfolioReturns(weights, alignedData);
   
   const hasSufficientData = missingHoldings.length === 0 && portReturns.length >= 30;
@@ -220,7 +222,7 @@ export async function analyzePortfolioRisk(
   const explanations = generatePortfolioExplanations(diversification, contributions, score);
 
   // 7. Stress Testing (Deterministic Scenarios)
-  const stressTests = generateStressTests(totalMarketValue, portfolioHoldings);
+  const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, portfolioHoldings);
 
   return {
     portfolioId: portfolio.id,
@@ -256,21 +258,22 @@ export async function analyzePortfolioRisk(
 // Helpers
 // ───────────────────────────────────────────────────────────────────────────
 
-function generateStressTests(
+export function generateStressTests(
+  totalPortfolioValue: number,
   totalMarketValue: number,
   holdings: PortfolioHolding[],
 ): StressTestScenario[] {
   const tests: StressTestScenario[] = [];
 
-  // Market Shock
+  // Market Shock (applied only to the invested/risky sleeve)
   const marketShockLoss = totalMarketValue * 0.10;
   tests.push({
     id: "market_shock_10",
     name: "Market Correction (-10%)",
-    description: "Evaluates impact if the entire portfolio drops by 10%.",
+    description: "Evaluates impact if the entire invested portfolio drops by 10%.",
     absoluteLoss: marketShockLoss,
-    percentageLoss: 10.0,
-    newPortfolioValue: totalMarketValue - marketShockLoss,
+    percentageLoss: (marketShockLoss / totalPortfolioValue) * 100,
+    newPortfolioValue: totalPortfolioValue - marketShockLoss,
   });
 
   // Largest Holding Crash
@@ -282,8 +285,8 @@ function generateStressTests(
       name: `${largest.symbol} Crash (-50%)`,
       description: `Evaluates impact if your largest holding (${largest.symbol}) drops by 50%.`,
       absoluteLoss: crashLoss,
-      percentageLoss: (crashLoss / totalMarketValue) * 100,
-      newPortfolioValue: totalMarketValue - crashLoss,
+      percentageLoss: (crashLoss / totalPortfolioValue) * 100,
+      newPortfolioValue: totalPortfolioValue - crashLoss,
     });
   }
 

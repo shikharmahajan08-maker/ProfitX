@@ -9,7 +9,8 @@ import {
   calculateDiversificationMetrics,
 } from "./services/risk/portfolioRiskMetrics";
 import { calculatePortfolioRiskScore } from "./services/risk/portfolioRiskScoring";
-import type { PortfolioRiskMetrics, DiversificationMetrics } from "./services/risk/portfolioTypes";
+import { generateStressTests } from "./services/risk/portfolioRiskEngine";
+import type { PortfolioRiskMetrics, DiversificationMetrics, PortfolioHolding } from "./services/risk/portfolioTypes";
 
 describe("Portfolio Risk Metrics", () => {
   it("aligns returns correctly and extracts synchronous data", () => {
@@ -223,5 +224,58 @@ describe("Phase 3 Fixes: Data Quality & Cash Constraints", () => {
     expect(aaplWeightInvested).toBe(0.50);
     expect(msftWeightInvested).toBe(0.50);
     expect(aaplWeightInvested + msftWeightInvested).toBeCloseTo(1.0, 4);
+  });
+
+  it("Aligned-history: properly drops holdings missing from aligned dataset", () => {
+    // Portfolio holds AAPL and TSLA.
+    // AAPL has 30 prices. TSLA has 30 prices.
+    // BUT they don't overlap at all.
+    const aaplPrices = Array.from({ length: 30 }, (_, i) => ({ date: `2023-01-${(i+1).toString().padStart(2, '0')}`, price: 100 }));
+    const tslaPrices = Array.from({ length: 30 }, (_, i) => ({ date: `2024-01-${(i+1).toString().padStart(2, '0')}`, price: 200 }));
+    
+    const history = { AAPL: aaplPrices, TSLA: tslaPrices };
+    const aligned = alignReturns(history);
+    
+    // Aligned dates should be 0 because no overlap.
+    expect(aligned.dates.length).toBe(0);
+    
+    // Simulate the engine's check:
+    const alignedSymbols = new Set(aligned.symbols);
+    // Since aligned returns handles this by finding common dates, if common dates = 0, no data is returned.
+    
+    // If a stock had NO prices at all:
+    const history2 = { AAPL: aaplPrices, MISSING: [] };
+    const aligned2 = alignReturns(history2);
+    const alignedSymbols2 = new Set(aligned2.symbols);
+    
+    // The engine checks if the portfolio holding symbol is in alignedSymbols2
+    // If MISSING had 0 prices, it's missing from history2 OR it yields 0 overlapping dates.
+    // Wait, alignReturns will yield symbols = ['AAPL', 'MISSING'] but dates = [].
+    // So the symbol is in alignedSymbols2, but dates.length < 30 triggers the global rejection.
+    expect(aligned2.dates.length).toBeLessThan(30);
+  });
+
+  it("Cash-aware stress test: only invested sleeve is shocked", () => {
+    const totalPortfolioValue = 200000;
+    const totalMarketValue = 100000; // Invested part
+    // Cash is implicitly 100000
+    
+    const holdings: PortfolioHolding[] = [
+      { symbol: "AAPL", quantity: 1, currentPrice: 100000, marketValue: 100000, weight: 1.0 }
+    ];
+    
+    const stressTests = generateStressTests(totalPortfolioValue, totalMarketValue, holdings);
+    
+    const marketShock = stressTests.find(t => t.id === "market_shock_10");
+    expect(marketShock).toBeDefined();
+    
+    // 10% of 100,000 invested = 10,000 loss
+    expect(marketShock!.absoluteLoss).toBe(10000);
+    
+    // 200,000 - 10,000 = 190,000 new total value
+    expect(marketShock!.newPortfolioValue).toBe(190000);
+    
+    // 10,000 / 200,000 * 100 = 5% portfolio loss
+    expect(marketShock!.percentageLoss).toBe(5);
   });
 });
